@@ -40,6 +40,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Path "VPCF-Editor" -Force
           Copy-Item "dist\VPCF-Editor.exe" "VPCF-Editor\VPCF-Editor.exe"
+          Copy-Item "d2pfx_compiler.zip" "VPCF-Editor\d2pfx_compiler.zip"
           Compress-Archive -Path "VPCF-Editor" -DestinationPath "VPCF-Editor-Win.zip" -Force
 
       - uses: actions/upload-artifact@v4
