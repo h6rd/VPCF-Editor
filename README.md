@@ -42,3 +42,8 @@ As a result, some effects may still show original details if they rely on vtex s
 Compiled `_c` files and the final VPK will appear in the compiled folder.
 
 https://github.com/user-attachments/assets/cfecb8f2-1f02-4a41-98e7-f323fd8e4f8d
+
+
+## TODO
+- [ ] vtex editor
+- [ ] gradient recolor
