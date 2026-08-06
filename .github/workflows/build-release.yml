@@ -21,6 +21,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Set app version from tag
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $version = $tag -replace '^v', ''
+          (Get-Content "src\config.py") -replace 'appVersion = ".*"', "appVersion = `"$version`"" | Set-Content "src\config.py"
+          Write-Host "appVersion set to $version (from tag $tag)"
+
       - name: Build
         run: pyinstaller --noconsole --onefile --add-data "icon.ico;." --collect-all vpk --collect-all pywinstyles --collect-all send2trash --collect-all customtkinter --icon=icon.ico --name "VPCF-Editor" main.py
 

@@ -34,3 +34,7 @@ GARBAGE_SUFFIX_RE = re.compile(
 GRAYSCALE_TOLERANCE = 10
 
 ENCODINGS_TO_TRY = ("utf-8-sig", "utf-8", "cp1251", "latin-1")
+
+appVersion = "1.3"
+
+githubRepo = "h6rd/VPCF-Editor"

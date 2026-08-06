@@ -4,6 +4,7 @@ import customtkinter as ctk
 
 from src.theme import applyThemeToTitlebar
 from src.app import createVpcfColorEditorApp
+from src.updater import checkForUpdatesAsync
 
 
 def get_resource_path(relative_path):
@@ -40,6 +41,9 @@ def main():
     app_state = createVpcfColorEditorApp(root, start_dir)
 
     applyThemeToTitlebar(root)
+
+    checkForUpdatesAsync(root)
+
     root.mainloop()
 
 
