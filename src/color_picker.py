@@ -1,5 +1,7 @@
 import colorsys
 import math
+import os
+import sys
 import tkinter as tk
 from typing import Any, Dict, Optional, Tuple
 
@@ -353,7 +355,7 @@ def buildColorPickerUi(state: Dict[str, Any], initial_rgb: Tuple[int, int, int],
     state["wheelImage"] = wheel_image
     wheel_canvas = tk.Canvas(
         wheel_wrap, width=WHEEL_SIZE, height=WHEEL_SIZE,
-        highlightthickness=1, highlightbackground=BORDER, bg="#18181b", bd=0,
+        highlightthickness=0, bg="#18181b", bd=0,
     )
     state["wheelCanvas"] = wheel_canvas
     wheel_canvas.pack()
@@ -510,6 +512,11 @@ def buildColorPickerUi(state: Dict[str, Any], initial_rgb: Tuple[int, int, int],
     window.after(10, lambda: [window.lift(), window.focus_force(), window.grab_set()])
 
 
+def get_icon_path() -> str:
+    if hasattr(sys, '_MEIPASS'):
+        return os.path.join(sys._MEIPASS, "icon.ico")
+    return os.path.join(os.path.abspath("."), "icon.ico")
+
 
 def createColorPicker(parent: tk.Misc, initial_rgb: Tuple[int, int, int], title: str) -> Dict[str, Any]:
     window = ctk.CTkToplevel(parent)
@@ -520,6 +527,9 @@ def createColorPicker(parent: tk.Misc, initial_rgb: Tuple[int, int, int], title:
         "updating": False,
     }
     buildColorPickerUi(state, initial_rgb, title)
+    icon_path = get_icon_path()
+    if os.path.isfile(icon_path):
+        window.after(50, lambda: window.iconbitmap(icon_path))
     return state
 
 

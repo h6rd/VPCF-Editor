@@ -22,18 +22,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Build
-        run: >
-          pyinstaller
-          --noconsole
-          --onefile
-          --add-data "icon.ico;."
-          --collect-all vpk
-          --collect-all pywinstyles
-          --collect-all send2trash
-          --collect-all customtkinter
-          --icon=icon.ico
-          --name "VPCF-Editor"
-          main.py
+        run: pyinstaller --noconsole --onefile --add-data "icon.ico;." --collect-all vpk --collect-all pywinstyles --collect-all send2trash --collect-all customtkinter --icon=icon.ico --name "VPCF-Editor" main.py
 
       - name: Zip
         shell: pwsh
