@@ -110,6 +110,9 @@ def syncFromRgb(state: Dict[str, Any]):
     state["updating"] = True
     try:
         r, g, b = currentRgb(state)
+        h, s, v = colorsys.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)
+        if s > 0.0:
+            state["lastHue"] = h
         state["hexVar"].set(f"#{r:02x}{g:02x}{b:02x}")
         updatePreview(state)
         updateWheelCursor(state)
@@ -135,6 +138,8 @@ def onRgbSliderChange(state: Dict[str, Any], channel: str, value: float):
         updatePreview(state)
         updateWheelCursor(state)
         h, s, v = colorsys.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)
+        if s > 0.0:
+            state["lastHue"] = h
         s_val = int(round(s * 100))
         v_val = int(round(v * 100))
         state["sVar"].set(s_val)
@@ -162,6 +167,8 @@ def onWheelEvent(state: Dict[str, Any], event):
     try:
         nr, ng, nb = int(round(r * 255)), int(round(g * 255)), int(round(b * 255))
         s_val = int(round(sat * 100))
+        if sat > 0.0:
+            state["lastHue"] = hue
         state["rVar"].set(nr)
         state["gVar"].set(ng)
         state["bVar"].set(nb)
@@ -187,7 +194,8 @@ def onSaturationSliderChange(state: Dict[str, Any], value: float):
     sat_val = float(value)
     state["sVar"].set(int(round(sat_val)))
     r, g, b = currentRgb(state)
-    h, _, v = colorsys.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)
+    _, cur_s, v = colorsys.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)
+    h = state["lastHue"] if cur_s == 0.0 else _
     sat = max(0.0, min(1.0, sat_val / 100.0))
     nr, ng, nb = colorsys.hsv_to_rgb(h, sat, v)
 
@@ -216,7 +224,8 @@ def onValueSliderChange(state: Dict[str, Any], value: float):
     val_val = float(value)
     state["vVar"].set(int(round(val_val)))
     r, g, b = currentRgb(state)
-    h, s, _ = colorsys.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)
+    _, s, _ = colorsys.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)
+    h = state["lastHue"] if s == 0.0 else _
     val = max(0.0, min(1.0, val_val / 100.0))
     nr, ng, nb = colorsys.hsv_to_rgb(h, s, val)
 
@@ -293,6 +302,10 @@ def renderPalette(state: Dict[str, Any]):
             command=lambda hc=hexcolor, st=state: onPalettePick(st, hc),
         )
         swatch.grid(row=row_idx, column=col_idx, padx=2, pady=2)
+        swatch.bind(
+            "<Double-Button-1>",
+            lambda e, hc=hexcolor, st=state: (onPalettePick(st, hc), onOk(st)),
+        )
 
 
 def onPalettePick(state: Dict[str, Any], hexcolor: str):
@@ -334,6 +347,8 @@ def buildColorPickerUi(state: Dict[str, Any], initial_rgb: Tuple[int, int, int],
 
     r, g, b = initial_rgb
     h, s, v = colorsys.rgb_to_hsv(r / 255.0, g / 255.0, b / 255.0)
+    
+    state["lastHue"] = h if s > 0.0 else 0.0
 
     state["rVar"] = tk.IntVar(value=r)
     state["gVar"] = tk.IntVar(value=g)

@@ -23,8 +23,9 @@ def writeTextFile(path: str, text: str, encoding: str) -> None:
 
 def scanFolder(root_dir: str) -> List[Tuple[str, str, int]]:
     results = []
+    _skip = {"raw", "compiled"}
     for dirpath, dirnames, filenames in os.walk(root_dir):
-        dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+        dirnames[:] = [d for d in dirnames if not d.startswith(".") and d not in _skip]
         for fn in filenames:
             if fn.lower().endswith(".vpcf"):
                 abs_path = os.path.join(dirpath, fn)

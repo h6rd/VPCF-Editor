@@ -10,6 +10,9 @@ else:
 OUTPUT_DIR = SCRIPT_DIR / "compiled"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
+RAW_DIR = SCRIPT_DIR / "raw"
+RAW_DIR.mkdir(exist_ok=True)
+
 COMPILER_URL = "https://raw.githubusercontent.com/h6rd/Compiler/refs/heads/main/d2pfx_compiler.zip"
 LOCAL_COMPILER_ZIP = SCRIPT_DIR / "d2pfx_compiler.zip"
 

@@ -7,7 +7,7 @@ from typing import List, Optional, Tuple, Dict, Any
 
 import customtkinter as ctk
 
-from src.config import SCRIPT_DIR, OUTPUT_DIR
+from src.config import SCRIPT_DIR, OUTPUT_DIR, RAW_DIR
 from src import compiler
 from src.compiler import initializeCompiler, compileVpcf, compileBatch
 from src.vpk_builder import compileToVpk
@@ -643,7 +643,9 @@ def bulkRecolor(state: Dict[str, Any], color_picker_fn) -> Tuple[int, int, int]:
     state["progress_bar"].set(0)
     state["progress_bar"].pack(side="right", padx=(0, 16))
 
+    raw_root = RAW_DIR
     files_to_compile: List[str] = []
+
     for idx, (rel_path, abs_path, _count) in enumerate(state["last_scan_results"], 1):
         state["status_var"].set(
             f"Recoloring [{idx}/{total_files}]: {rel_path}...")
@@ -682,18 +684,22 @@ def bulkRecolor(state: Dict[str, Any], color_picker_fn) -> Tuple[int, int, int]:
                     vals.append(a / 255.0)
             new_values_map[id(entry)] = vals
 
+        if not new_values_map:
+            continue
+
         new_text = applyColorChanges(text, entries, new_values_map)
         if new_text == text:
             continue
 
+        raw_dest = raw_root / rel_path
         try:
-            writeTextFile(abs_path, new_text, enc)
+            raw_dest.parent.mkdir(parents=True, exist_ok=True)
+            writeTextFile(str(raw_dest), new_text, enc)
             changed_files += 1
-            files_to_compile.append(abs_path)
+            files_to_compile.append(str(raw_dest))
         except Exception as exc:
             compile_errors.append(f"{rel_path}: (save error) {exc}\n{'-'*60}")
 
-    # batch compile
     compiled_files = 0
     if files_to_compile:
         state["status_var"].set(
@@ -702,7 +708,7 @@ def bulkRecolor(state: Dict[str, Any], color_picker_fn) -> Tuple[int, int, int]:
         state["root"].update()
 
         _total, compiled_files, errors_dict = compileBatch(
-            files_to_compile, state["root_dir"]
+            files_to_compile, str(raw_root)
         )
         for rel_path, err_msg in errors_dict.items():
             compile_errors.append(f"{rel_path}:\n{err_msg}\n{'-'*60}")
@@ -730,6 +736,16 @@ def afterBulkRecolor(state: Dict[str, Any]):
         loadFile(state, reopen_path)
     else:
         clearRightPanel(state)
+
+
+def cleanupRaw():
+    import shutil
+    try:
+        if RAW_DIR.exists():
+            shutil.rmtree(RAW_DIR)
+            RAW_DIR.mkdir(exist_ok=True)
+    except Exception:
+        pass
 
 
 def recolorAllFilesSingleColor(state: Dict[str, Any]):
@@ -761,6 +777,7 @@ def recolorAllFilesSingleColor(state: Dict[str, Any]):
     afterBulkRecolor(state)
 
     vpk_path = buildVpkFromCompiled()
+    cleanupRaw()
 
     msg = f"Recolored {changed} file(s). Compiled {compiled} file(s)."
     if vpk_path:
@@ -801,6 +818,7 @@ def recolorAllFilesTwoColors(state: Dict[str, Any]):
     afterBulkRecolor(state)
 
     vpk_path = buildVpkFromCompiled()
+    cleanupRaw()
 
     msg = f"Recolored {changed} file(s). Compiled {compiled} file(s)."
     if vpk_path:
