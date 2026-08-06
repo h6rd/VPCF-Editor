@@ -9,7 +9,7 @@ import customtkinter as ctk
 
 from src.config import SCRIPT_DIR, OUTPUT_DIR
 from src import compiler
-from src.compiler import initializeCompiler, compileVpcf
+from src.compiler import initializeCompiler, compileVpcf, compileBatch
 from src.vpk_builder import compileToVpk
 from src.color_parser import findColors, applyColorChanges, colorEntryRgba255, colorEntryLabel
 from src.recolor import isGrayscale, recolorPreservingSv
@@ -569,28 +569,25 @@ def compileAllScannedFiles(state: Dict[str, Any]) -> Tuple[int, int, List[str]]:
         rescan(state)
 
     total_files = len(state["last_scan_results"])
-    compiled_files = 0
     compile_errors: List[str] = []
 
     if total_files == 0:
         return 0, 0, compile_errors
 
-    state["progress_bar"].set(0)
+    state["progress_bar"].set(0.1)
     state["progress_bar"].pack(side="right", padx=(0, 16))
+    state["status_var"].set(f"Compiling {total_files} file(s) in batch...")
+    state["root"].update()
 
-    for idx, (rel_path, abs_path, _count) in enumerate(state["last_scan_results"], 1):
-        state["status_var"].set(
-            f"Compiling [{idx}/{total_files}]: {rel_path}...")
-        state["progress_bar"].set(idx / total_files)
-        state["root"].update()
+    file_paths = [abs_path for (_rel, abs_path, _c) in state["last_scan_results"]]
+    _total, compiled_files, errors_dict = compileBatch(file_paths, state["root_dir"])
 
-        if compileVpcf(abs_path, state["root_dir"]):
-            compiled_files += 1
-        else:
-            compile_errors.append(
-                f"{rel_path}:\n{compiler.LAST_COMPILE_ERROR}\n{'-'*60}")
-
+    state["progress_bar"].set(1.0)
+    state["root"].update()
     state["progress_bar"].pack_forget()
+
+    for rel_path, err_msg in errors_dict.items():
+        compile_errors.append(f"{rel_path}:\n{err_msg}\n{'-'*60}")
 
     if compile_errors:
         log_path = OUTPUT_DIR / "compile_errors.log"
@@ -637,7 +634,6 @@ def saveCurrentFile(state: Dict[str, Any]):
 
 def bulkRecolor(state: Dict[str, Any], color_picker_fn) -> Tuple[int, int, int]:
     changed_files = 0
-    compiled_files = 0
     compile_errors: List[str] = []
 
     total_files = len(state["last_scan_results"])
@@ -647,10 +643,11 @@ def bulkRecolor(state: Dict[str, Any], color_picker_fn) -> Tuple[int, int, int]:
     state["progress_bar"].set(0)
     state["progress_bar"].pack(side="right", padx=(0, 16))
 
+    files_to_compile: List[str] = []
     for idx, (rel_path, abs_path, _count) in enumerate(state["last_scan_results"], 1):
         state["status_var"].set(
-            f"Compiling [{idx}/{total_files}]: {rel_path}...")
-        state["progress_bar"].set(idx / total_files)
+            f"Recoloring [{idx}/{total_files}]: {rel_path}...")
+        state["progress_bar"].set(idx / (total_files * 2))
         state["root"].update()
 
         try:
@@ -692,15 +689,26 @@ def bulkRecolor(state: Dict[str, Any], color_picker_fn) -> Tuple[int, int, int]:
         try:
             writeTextFile(abs_path, new_text, enc)
             changed_files += 1
-            if compileVpcf(abs_path, state["root_dir"]):
-                compiled_files += 1
-            else:
-                compile_errors.append(
-                    f"{rel_path}:\n{compiler.LAST_COMPILE_ERROR}\n{'-'*60}")
+            files_to_compile.append(abs_path)
         except Exception as exc:
             compile_errors.append(f"{rel_path}: (save error) {exc}\n{'-'*60}")
-            continue
 
+    # batch compile
+    compiled_files = 0
+    if files_to_compile:
+        state["status_var"].set(
+            f"Compiling {len(files_to_compile)} changed file(s) in batch...")
+        state["progress_bar"].set(0.6)
+        state["root"].update()
+
+        _total, compiled_files, errors_dict = compileBatch(
+            files_to_compile, state["root_dir"]
+        )
+        for rel_path, err_msg in errors_dict.items():
+            compile_errors.append(f"{rel_path}:\n{err_msg}\n{'-'*60}")
+
+    state["progress_bar"].set(1.0)
+    state["root"].update()
     state["progress_bar"].pack_forget()
 
     if compile_errors:
