@@ -9,7 +9,7 @@ A tool for recoloring particle effects, compiling them, and packaging the result
 | Platform | Link |
 | --- | --- |
 | Windows | [VPCF-Editor-Win.zip](https://github.com/h6rd/VPCF-Editor/releases/latest/download/VPCF-Editor-Win.zip) |
-| Linux [`guide`](https://github.com/h6rd/VPCF-Editor#linux-usage) | [Compiler-Linux.zip](https://github.com/h6rd/VPCF-Editor/releases/latest/download/VPCF-Editor-Linux.zip) |
+| Linux [`guide`](https://github.com/h6rd/VPCF-Editor#linux-usage) | [VPCF-Editor-Linux.zip](https://github.com/h6rd/VPCF-Editor/releases/latest/download/VPCF-Editor-Linux.zip) |
 
 ---
 
