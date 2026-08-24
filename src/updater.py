@@ -9,7 +9,7 @@ from typing import Optional, Dict, Any
 
 import customtkinter as ctk
 
-from src.config import githubRepo, appVersion
+from src.config import githubRepo, appVersion, IS_WINDOWS, IS_LINUX, IS_MAC
 from src.theme import (
     BG, FG, FG_MUTED, ACCENT, ACCENT_HOVER, FONT_FAMILY, ON_ACCENT
 )
@@ -67,6 +67,19 @@ def fetchLatestRelease() -> Optional[Dict[str, Any]]:
 
 def findDownloadUrl(releaseData: Dict[str, Any]) -> str:
     assets = releaseData.get("assets") or []
+
+    if IS_LINUX:
+        platform_key = "linux"
+    elif IS_MAC:
+        platform_key = "mac"
+    else:
+        platform_key = "win"
+
+    for asset in assets:
+        assetName = (asset.get("name") or "").lower()
+        if platform_key in assetName and (assetName.endswith(".zip") or assetName.endswith(".exe")):
+            return asset.get("browser_download_url") or releaseData.get("html_url", "")
+
     for asset in assets:
         assetName = (asset.get("name") or "").lower()
         if assetName.endswith(".exe") or assetName.endswith(".zip"):
@@ -80,7 +93,12 @@ def showUpdatePopup(root: ctk.CTk, latestVersion: str, downloadUrl: str):
 
     icon_path = get_resource_path("icon.ico")
     if os.path.isfile(icon_path):
-        popup.after(50, lambda: popup.iconbitmap(icon_path))
+        def setPopupIcon():
+            try:
+                popup.iconbitmap(icon_path)
+            except Exception:
+                pass
+        popup.after(50, setPopupIcon)
 
     popup.geometry("380x180")
     popup.resizable(False, False)

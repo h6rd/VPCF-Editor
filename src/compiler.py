@@ -2,19 +2,51 @@ import os
 import shutil
 import subprocess
 import time
+import ssl
 import zipfile
 import urllib.request
 from pathlib import Path
 from typing import Tuple
 
-from src.config import SCRIPT_DIR, OUTPUT_DIR, COMPILER_URL, LOCAL_COMPILER_ZIP
-from src.find_dota import findDotaPath
+from src.config import (
+    SCRIPT_DIR, OUTPUT_DIR, COMPILER_URL, LOCAL_COMPILER_ZIP,
+    IS_WINDOWS, RESCOMP_OVERRIDE_DIR, TOOLS_SUBPATHS,
+)
+from src.find_dota import findDotaPath, validateDotaPath
 
 DOTA_CONTENT = None
 DOTA_GAME = None
 COMPILER = None
 COMPILER_INIT_ERROR = ""
 LAST_COMPILE_ERROR = ""
+
+
+def getSslContext():
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        pass
+
+    for path in (
+        "/etc/ssl/certs/ca-certificates.crt",
+        "/etc/pki/tls/certs/ca-bundle.crt",
+        "/etc/ssl/cert.pem",
+        "/etc/ssl/ca-bundle.pem",
+    ):
+        if os.path.exists(path):
+            try:
+                return ssl.create_default_context(cafile=path)
+            except Exception:
+                continue
+
+    return ssl.create_default_context()
+
+
+def downloadUrlToFile(url, dest_path, timeout=30):
+    ctx = getSslContext()
+    with urllib.request.urlopen(url, context=ctx, timeout=timeout) as response, open(dest_path, "wb") as out_file:
+        shutil.copyfileobj(response, out_file)
 
 
 def downloadCompiler(dota_path) -> Tuple[bool, str]:
@@ -39,7 +71,7 @@ def downloadCompiler(dota_path) -> Tuple[bool, str]:
     is_temp_download = False
 
     try:
-        urllib.request.urlretrieve(COMPILER_URL, downloaded_zip_path)
+        downloadUrlToFile(COMPILER_URL, downloaded_zip_path)
         zip_path = downloaded_zip_path
         is_temp_download = True
     except Exception as exc:
@@ -77,18 +109,89 @@ def downloadCompiler(dota_path) -> Tuple[bool, str]:
     return True, ""
 
 
+def extractWorkshopTools(dota_path) -> bool:
+    compiler_check = os.path.join(dota_path, "game", "bin", "win64", "resourcecompiler.exe")
+    if not os.path.exists(compiler_check):
+        return False
+
+    ok = True
+    for rel in TOOLS_SUBPATHS:
+        src = os.path.join(dota_path, rel)
+        dst = os.path.join(str(RESCOMP_OVERRIDE_DIR), rel)
+
+        if not os.path.exists(src):
+            continue
+
+        try:
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            if os.path.isdir(src):
+                shutil.copytree(src, dst, dirs_exist_ok=True)
+            else:
+                shutil.copy2(src, dst)
+        except Exception:
+            ok = False
+
+    return ok
+
+
+def compilerPath(path) -> str:
+    if IS_WINDOWS:
+        return str(path)
+    return os.path.abspath(str(path))
+
+
+def buildCmd(*args) -> list:
+    prefix = [] if IS_WINDOWS else ["wine"]
+    return prefix + [str(COMPILER)] + list(args)
+
+
+def runCompiler(cmd: list, timeout: int):
+    env = os.environ.copy()
+    if not IS_WINDOWS:
+        env.setdefault("WINEDEBUG", "-all")
+    return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, env=env)
+
+
 def initializeCompiler():
     global DOTA_CONTENT, DOTA_GAME, COMPILER, COMPILER_INIT_ERROR
     COMPILER_INIT_ERROR = ""
 
-    dota_path = findDotaPath()
-    if not dota_path:
+    if not IS_WINDOWS and not shutil.which("wine"):
         COMPILER_INIT_ERROR = (
-            "Could not find the Dota 2 installation folder.\n"
-            "Make sure Steam and Dota 2 are installed, and that the Steam "
-            "library is visible in the registry or on one of the local drives."
+            "Wine was not found in PATH.\n"
+            "resourcecompiler.exe is a Windows binary and needs wine to run on Linux "
+            "(e.g. `sudo apt install wine`)."
         )
         return False
+
+    if RESCOMP_OVERRIDE_DIR.exists():
+        dota_path = str(RESCOMP_OVERRIDE_DIR)
+        if not validateDotaPath(dota_path):
+            COMPILER_INIT_ERROR = (
+                f"{RESCOMP_OVERRIDE_DIR} exists, but resourcecompiler.exe or "
+                "game/dota is missing inside it."
+            )
+            return False
+    else:
+        dota_path = findDotaPath()
+        if not dota_path:
+            COMPILER_INIT_ERROR = (
+                "Could not find the Dota 2 installation folder.\n"
+                "Make sure Steam and Dota 2 are installed, and that the Steam "
+                "library is visible in the registry or on one of the local drives."
+            )
+            if not IS_WINDOWS:
+                COMPILER_INIT_ERROR += (
+                    "\n\nOn Linux, Workshop Tools only get mounted when Dota 2 is "
+                    "forced to run under Proton Experimental (Steam -> right-click "
+                    "Dota 2 -> Properties -> Compatibility). You can also manually "
+                    f"extract a Workshop Tools depot into:\n{RESCOMP_OVERRIDE_DIR}"
+                )
+            return False
+
+        if not IS_WINDOWS:
+            if extractWorkshopTools(dota_path) and validateDotaPath(str(RESCOMP_OVERRIDE_DIR)):
+                dota_path = str(RESCOMP_OVERRIDE_DIR)
 
     DOTA_CONTENT = os.path.join(
         dota_path, "content", "dota_addons", "d2pfx_compiler"
@@ -172,9 +275,9 @@ def compileBatch(file_paths: list, root_dir: str) -> Tuple[int, int, dict]:
         LAST_COMPILE_ERROR = f"Failed to write filelist: {exc}"
         return len(file_paths), 0, errors
 
-    cmd = f'"{COMPILER}" -f -filelist "{filelist_path}"'
+    cmd = buildCmd("-f", "-filelist", compilerPath(filelist_path))
     try:
-        subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=300)
+        runCompiler(cmd, 300)
     except Exception as exc:
         LAST_COMPILE_ERROR = f"Failed to run resourcecompiler.exe: {exc}"
         try:
@@ -247,11 +350,9 @@ def compileVpcf(file_path: str, root_dir: str) -> bool:
         LAST_COMPILE_ERROR = f"Failed to copy the file to:\n{content_dir}\n\nError: {exc}"
         return False
 
-    cmd = f'"{COMPILER}" -f "{dest_file}"'
+    cmd = buildCmd("-f", compilerPath(dest_file))
     try:
-        proc = subprocess.run(
-            cmd, shell=True, capture_output=True, text=True, timeout=60
-        )
+        proc = runCompiler(cmd, 60)
     except Exception as exc:
         LAST_COMPILE_ERROR = f"Failed to run resourcecompiler.exe:\n{exc}"
         return False
@@ -265,7 +366,7 @@ def compileVpcf(file_path: str, root_dir: str) -> bool:
             details = "(the compiler produced no output)"
         LAST_COMPILE_ERROR = (
             f"resourcecompiler.exe did not create the file:\n{compiled_file}\n\n"
-            f"Command: {cmd}\n"
+            f"Command: {' '.join(cmd)}\n"
             f"Return code: {proc.returncode}\n\n"
             f"Compiler output:\n{details}"
         )

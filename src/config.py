@@ -1,4 +1,6 @@
+import os
 import sys
+import platform
 import re
 from pathlib import Path
 
@@ -12,6 +14,20 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 
 RAW_DIR = SCRIPT_DIR / "raw"
 RAW_DIR.mkdir(exist_ok=True)
+
+IS_WINDOWS = platform.system() == "Windows"
+IS_LINUX = platform.system() == "Linux"
+IS_MAC = platform.system() == "Darwin"
+
+RESCOMP_OVERRIDE_DIR = SCRIPT_DIR / "bin" / "resourcecompiler"
+
+TOOLS_SUBPATHS = [
+    os.path.join("game", "bin"),
+    os.path.join("game", "core"),
+    os.path.join("game", "dota", "bin"),
+    os.path.join("game", "dota", "tools"),
+    os.path.join("game", "dota", "gameinfo.gi"),
+]
 
 COMPILER_URL = "https://raw.githubusercontent.com/h6rd/Compiler/refs/heads/main/d2pfx_compiler.zip"
 LOCAL_COMPILER_ZIP = SCRIPT_DIR / "d2pfx_compiler.zip"

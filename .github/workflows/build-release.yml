@@ -45,8 +45,52 @@ jobs:
           name: windows-build
           path: VPCF-Editor-Win.zip
 
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install system Tk/Tcl libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-tk tk-dev
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install certifi
+
+      - name: Set app version from tag
+        run: |
+          tag="${{ github.ref_name }}"
+          version="${tag#v}"
+          sed -i "s/appVersion = \".*\"/appVersion = \"$version\"/" src/config.py
+          echo "appVersion set to $version (from tag $tag)"
+
+      - name: Build
+        run: |
+          pyinstaller --onefile --add-data "icon.ico:." --add-data "$(python3 -c 'import certifi; print(certifi.where())'):certifi" --collect-all vpk --collect-all send2trash --collect-all customtkinter --name "VPCF-Editor" main.py
+
+      - name: Zip
+        run: |
+          mkdir -p VPCF-Editor
+          cp dist/VPCF-Editor VPCF-Editor/VPCF-Editor
+          cp d2pfx_compiler.zip VPCF-Editor/d2pfx_compiler.zip
+          zip -r VPCF-Editor-Linux.zip VPCF-Editor
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-build
+          path: VPCF-Editor-Linux.zip
+
   release:
-    needs: [build-windows]
+    needs: [build-windows, build-linux]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -55,8 +99,14 @@ jobs:
         with:
           name: windows-build
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-build
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: VPCF-Editor-Win.zip
+          files: |
+            VPCF-Editor-Win.zip
+            VPCF-Editor-Linux.zip
           generate_release_notes: true
