@@ -3,3 +3,4 @@ pywinstyles
 send2trash
 vpk
 customtkinter
+Pillow

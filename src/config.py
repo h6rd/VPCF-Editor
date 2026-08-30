@@ -19,7 +19,10 @@ IS_WINDOWS = platform.system() == "Windows"
 IS_LINUX = platform.system() == "Linux"
 IS_MAC = platform.system() == "Darwin"
 
-RESCOMP_OVERRIDE_DIR = SCRIPT_DIR / "bin" / "resourcecompiler"
+BIN_DIR = SCRIPT_DIR / "bin"
+BIN_DIR.mkdir(exist_ok=True)
+
+RESCOMP_OVERRIDE_DIR = BIN_DIR / "resourcecompiler"
 
 TOOLS_SUBPATHS = [
     os.path.join("game", "bin"),
@@ -32,6 +35,15 @@ TOOLS_SUBPATHS = [
 COMPILER_URL = "https://raw.githubusercontent.com/h6rd/Compiler/refs/heads/main/d2pfx_compiler.zip"
 LOCAL_COMPILER_ZIP = SCRIPT_DIR / "d2pfx_compiler.zip"
 
+S2V_CLI_URL_WIN = "https://github.com/ValveResourceFormat/ValveResourceFormat/releases/download/18.0/cli-windows-x64.zip"
+S2V_CLI_URL_LINUX = "https://github.com/ValveResourceFormat/ValveResourceFormat/releases/download/18.0/cli-linux-x64.zip"
+S2V_CLI_DIR = BIN_DIR / "s2v_cli"
+S2V_CLI_DIR.mkdir(parents=True, exist_ok=True)
+
+TEXTURE_CACHE_DIR = SCRIPT_DIR / "texture_cache"
+TEXTURE_CACHE_DIR.mkdir(exist_ok=True)
+
+TEXTURE_MANIFEST_FILE = SCRIPT_DIR / "texture_manifest.json"
 
 RECENT_COLORS_FILE = SCRIPT_DIR / "recent_colors.json"
 MAX_RECENT_COLORS = 24

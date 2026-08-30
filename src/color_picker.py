@@ -544,7 +544,12 @@ def createColorPicker(parent: tk.Misc, initial_rgb: Tuple[int, int, int], title:
     buildColorPickerUi(state, initial_rgb, title)
     icon_path = get_icon_path()
     if os.path.isfile(icon_path):
-        window.after(50, lambda: window.iconbitmap(icon_path))
+        def setIcon():
+            try:
+                window.iconbitmap(icon_path)
+            except Exception:
+                pass
+        window.after(50, setIcon)
     return state
 
 
@@ -565,4 +570,3 @@ def askCustomColor(
     state = createColorPicker(parent, initial_rgb=(r, g, b), title=title)
     parent.wait_window(state["window"])
     return state["result"]
-

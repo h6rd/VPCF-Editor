@@ -57,5 +57,5 @@ The VPCF-Editor will now continue to work without requiring active Workshop Tool
 
 
 ## TODO
-- [ ] vtex editor
+- [x] vtex editor
 - [ ] gradient recolor

@@ -18,6 +18,12 @@ def validateDotaPath(path):
     return os.path.exists(compiler_path) and os.path.exists(game_folder)
 
 
+def validateDotaGamePath(path):
+    if not os.path.exists(path):
+        return False
+    return os.path.exists(os.path.join(path, "game", "dota", "pak01_dir.vpk"))
+
+
 def findSteamPathWindows():
     for key_path in [r"SOFTWARE\WOW6432Node\Valve\Steam", r"SOFTWARE\Valve\Steam"]:
         try:
@@ -44,7 +50,7 @@ def findSteamRootsUnix():
     return [c for c in candidates if os.path.exists(c)]
 
 
-def searchAllDrives(seen_paths=None):
+def searchAllDrives(seen_paths=None, validator=validateDotaPath):
     if seen_paths is None:
         seen_paths = set()
         
@@ -68,12 +74,12 @@ def searchAllDrives(seen_paths=None):
                 continue
                 
             seen_paths.add(full_path)
-            if os.path.exists(full_path) and validateDotaPath(full_path):
+            if os.path.exists(full_path) and validator(full_path):
                 return full_path
     return None
 
 
-def findDotaInSteamRoot(steam_path, seen_paths=None):
+def findDotaInSteamRoot(steam_path, seen_paths=None, validator=validateDotaPath):
     if seen_paths is None:
         seen_paths = set()
         
@@ -83,7 +89,7 @@ def findDotaInSteamRoot(steam_path, seen_paths=None):
     
     if default_dota not in seen_paths:
         seen_paths.add(default_dota)
-        if os.path.exists(default_dota) and validateDotaPath(default_dota):
+        if os.path.exists(default_dota) and validator(default_dota):
             return default_dota
 
     library_file = os.path.join(
@@ -106,7 +112,7 @@ def findDotaInSteamRoot(steam_path, seen_paths=None):
                     continue
                     
                 seen_paths.add(dota_path)
-                if os.path.exists(dota_path) and validateDotaPath(dota_path):
+                if os.path.exists(dota_path) and validator(dota_path):
                     return dota_path
         except Exception:
             pass
@@ -114,20 +120,28 @@ def findDotaInSteamRoot(steam_path, seen_paths=None):
     return None
 
 
-def findDotaPath():
+def findDotaPathWithValidator(validator):
     seen_paths = set()
     
     if IS_WINDOWS:
         steam_path = findSteamPathWindows()
         if steam_path:
-            dota_path = findDotaInSteamRoot(steam_path, seen_paths)
+            dota_path = findDotaInSteamRoot(steam_path, seen_paths, validator)
             if dota_path:
                 return dota_path
-        return searchAllDrives(seen_paths)
+        return searchAllDrives(seen_paths, validator)
 
     for steam_path in findSteamRootsUnix():
-        dota_path = findDotaInSteamRoot(steam_path, seen_paths)
+        dota_path = findDotaInSteamRoot(steam_path, seen_paths, validator)
         if dota_path:
             return dota_path
             
     return None
+
+
+def findDotaPath():
+    return findDotaPathWithValidator(validateDotaPath)
+
+
+def findDotaPathForVpk():
+    return findDotaPathWithValidator(validateDotaGamePath)

@@ -110,3 +110,5 @@ jobs:
             VPCF-Editor-Win.zip
             VPCF-Editor-Linux.zip
           generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          name: ${{ github.ref_name }}
