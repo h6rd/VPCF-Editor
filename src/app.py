@@ -1470,7 +1470,21 @@ def bulkRecolor(state: Dict[str, Any], color_picker_fn) -> Tuple[int, int, List[
 
         new_text = job["new_text"]
         if new_texture_paths:
-            new_text = applyTextureChanges(new_text, job["textures"], new_texture_paths)
+            updated_textures = findTextures(new_text)
+            remapped_texture_paths: Dict[int, str] = {}
+
+            if len(updated_textures) != len(job["textures"]):
+                compile_errors.append(
+                    f"{rel_path}: texture entries changed unexpectedly after color rewrite; skipped texture path updates\n{'-'*60}"
+                )
+            else:
+                for original_entry, updated_entry in zip(job["textures"], updated_textures):
+                    new_path = new_texture_paths.get(id(original_entry))
+                    if new_path:
+                        remapped_texture_paths[id(updated_entry)] = new_path
+
+                if remapped_texture_paths:
+                    new_text = applyTextureChanges(new_text, updated_textures, remapped_texture_paths)
 
         if new_text == job["text"]:
             continue
