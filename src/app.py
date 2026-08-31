@@ -447,7 +447,7 @@ def applyCurrentEditsToDisk(state: Dict[str, Any]) -> Tuple[bool, List[str]]:
         original_vtex_path = entry["vtex_path"]
 
         try:
-            source_vtex = sourceTexturePath(original_vtex_path)
+            source_vtex = entry.get("source_vtex_path") or sourceTexturePath(original_vtex_path)
             new_vtex_name = generateUniqueName(
                 source_vtex,
                 entry.get("h_shift", 0.0),
@@ -457,7 +457,7 @@ def applyCurrentEditsToDisk(state: Dict[str, Any]) -> Tuple[bool, List[str]]:
                 entry.get("tint_rgb"),
             )
 
-            valid_vtex_out = ensureTextureSourceExists(original_vtex_path, entry.get("vtex_out"))
+            valid_vtex_out = ensureTextureSourceExists(source_vtex, entry.get("vtex_out"))
             if not valid_vtex_out:
                 texture_errors.append(
                     f"{original_vtex_path.split('/')[-1]}: source texture is missing on disk "
@@ -469,28 +469,17 @@ def applyCurrentEditsToDisk(state: Dict[str, Any]) -> Tuple[bool, List[str]]:
                 from src.texture_manager import pngsForVtex
                 entry["pngs"] = pngsForVtex(Path(valid_vtex_out))
 
+            raw_vtex_path, raw_pngs = persistRawTextureFiles(
+                new_vtex_name, valid_vtex_out, entry.get("pngs", [])
+            )
+
             mode = entry.get("recolor_mode", "hsv")
             tint_rgb = entry.get("tint_rgb")
-            for png in entry.get("pngs", []):
+            for png in raw_pngs:
                 if mode in ("overlay", "replace") and tint_rgb:
                     tintImage(png, png, tuple(tint_rgb), mode)
                 else:
                     adjustImage(png, png, entry["h_shift"], entry["s_scale"], entry["v_scale"])
-
-            old_vtex_path = Path(entry["vtex_out"])
-            new_vtex_path = old_vtex_path.with_name(new_vtex_name.split("/")[-1])
-            renamed_pngs = entry.get("pngs", [])
-            if old_vtex_path.exists() and old_vtex_path != new_vtex_path:
-                old_vtex_path.rename(new_vtex_path)
-                renamed_pngs = renameExtractedTextureAssets(
-                    str(old_vtex_path), str(new_vtex_path), entry.get("pngs", [])
-                )
-            entry["vtex_out"] = str(new_vtex_path)
-            entry["pngs"] = renamed_pngs
-
-            raw_vtex_path, _raw_pngs = persistRawTextureFiles(
-                new_vtex_name, str(new_vtex_path), renamed_pngs
-            )
 
             recordTextureManifest(
                 new_vtex_name,
@@ -592,14 +581,19 @@ def loadFile(state: Dict[str, Any], path: str):
     state["current_entries"] = findColors(text)
     state["current_textures"] = findTextures(text)
     
-    vtex_paths = [t["vtex_path"] for t in state["current_textures"]]
-    if vtex_paths:
-        state["status_var"].set(f"Loading {len(vtex_paths)} texture(s)...")
+    source_vtex_paths = {
+        t["vtex_path"]: sourceTexturePath(t["vtex_path"])
+        for t in state["current_textures"]
+    }
+    if source_vtex_paths:
+        state["status_var"].set(f"Loading {len(source_vtex_paths)} texture(s)...")
         state["root"].update_idletasks()
-        extracted = extractTexturesBatch(vtex_paths)
+        extracted = extractTexturesBatch(list(dict.fromkeys(source_vtex_paths.values())))
         for t_entry in state["current_textures"]:
+            source_vtex_path = source_vtex_paths[t_entry["vtex_path"]]
+            t_entry["source_vtex_path"] = source_vtex_path
             success, msg, vtex_out, pngs = extracted.get(
-                t_entry["vtex_path"], (False, "Texture was not extracted.", None, []))
+                source_vtex_path, (False, "Texture was not extracted.", None, []))
             if success and pngs:
                 t_entry["vtex_out"] = vtex_out
                 t_entry["pngs"] = sorted(pngs)
@@ -1025,11 +1019,11 @@ def buildTextureInline(state: Dict[str, Any], parent_card: ctk.CTkFrame,
         font=(FONT_FAMILY, 9), command=pickTintColor,
     ).pack(side="left", padx=(6, 0))
 
-    hue_sl = makeSlider(slider_panel, "Hue Shift   (−1 … +1)", -1.0, 1.0,
+    hue_sl = makeSlider(slider_panel, "Hue Shift", -1.0, 1.0,
                         t_entry.get("h_shift", 0.0), onSlider)
-    sat_sl = makeSlider(slider_panel, "Saturation  (0 … 2×)", 0.0, 2.0,
+    sat_sl = makeSlider(slider_panel, "Saturation", 0.0, 2.0,
                         t_entry.get("s_scale", 1.0), onSlider)
-    val_sl = makeSlider(slider_panel, "Brightness  (0 … 2×)", 0.0, 2.0,
+    val_sl = makeSlider(slider_panel, "Brightness", 0.0, 2.0,
                         t_entry.get("v_scale", 1.0), onSlider)
     ctk.CTkFrame(slider_panel, fg_color="transparent", height=6).pack()
     refreshTintUi()
@@ -1038,7 +1032,7 @@ def buildTextureInline(state: Dict[str, Any], parent_card: ctk.CTkFrame,
 def buildOrphanTextureCard(state: Dict[str, Any], t_entry: Dict[str, Any]):
     card = ctk.CTkFrame(state["scrollable_frame"], fg_color="#1e1e24", corner_radius=10)
     card.pack(fill="x", padx=4, pady=4)
-    ctk.CTkLabel(card, text="TEXTURE (no colour match)", text_color=FG_MUTED,
+    ctk.CTkLabel(card, text="TEXTURE", text_color=FG_MUTED,
                  font=(FONT_FAMILY, 9, "bold")).pack(anchor="w", padx=12, pady=(10, 4))
     buildTextureInline(state, card, t_entry)
 
