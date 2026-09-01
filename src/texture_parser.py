@@ -3,6 +3,13 @@ import hashlib
 from typing import List, Dict, Any, Optional, Tuple
 
 TEXTURE_PATTERN = re.compile(r'resource:"([^"]+\.vtex)"')
+IGNORED_TEXTURE_NAME_PARTS = ("lens_flare", "ripple")
+
+
+def shouldIgnoreTexture(vtex_path: str) -> bool:
+    lowered = vtex_path.lower()
+    return any(part in lowered for part in IGNORED_TEXTURE_NAME_PARTS)
+
 
 def findTextures(text: str) -> List[Dict[str, Any]]:
     entries = []
@@ -19,6 +26,8 @@ def findTextures(text: str) -> List[Dict[str, Any]]:
 
     for match in TEXTURE_PATTERN.finditer(text):
         vtex_path = match.group(1)
+        if shouldIgnoreTexture(vtex_path):
+            continue
         pos = match.start(1)
         line_no = text.count('\n', 0, pos) + 1
         entries.append({

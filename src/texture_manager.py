@@ -223,6 +223,76 @@ def copyPathPreservingRelativeLocation(
     return dst
 
 
+def renamedStemAssetName(file_name: str, old_stem: str, new_stem: str) -> str:
+    path_obj = Path(file_name)
+    stem = path_obj.stem
+    if stem == old_stem:
+        new_name_stem = new_stem
+    elif stem.startswith(f"{old_stem}_") or stem.startswith(f"{old_stem}-"):
+        new_name_stem = new_stem + stem[len(old_stem):]
+    else:
+        return file_name
+    return f"{new_name_stem}{path_obj.suffix}"
+
+
+def retargetVtexInputs(vtex_out: Path, old_stem: str, new_stem: str) -> List[str]:
+    if old_stem == new_stem:
+        pngs = pngsForVtex(vtex_out)
+        if not pngs:
+            pngs = legacyPngsForRenamedVtex(vtex_out)
+        return pngs
+
+    source_root = textureSourceRoot(vtex_out)
+    if source_root is None:
+        pngs = pngsForVtex(vtex_out)
+        if not pngs:
+            pngs = legacyPngsForRenamedVtex(vtex_out)
+        return pngs
+
+    try:
+        text = vtex_out.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        pngs = pngsForVtex(vtex_out)
+        if not pngs:
+            pngs = legacyPngsForRenamedVtex(vtex_out)
+        return pngs
+
+    replacements: Dict[str, str] = {}
+    for rel_input in re.findall(r'"m_fileName"\s+"string"\s+"([^"]+)"', text):
+        old_name = Path(rel_input).name
+        new_name = renamedStemAssetName(old_name, old_stem, new_stem)
+        if new_name == old_name:
+            continue
+
+        old_path = source_root / rel_input
+        new_rel = str(Path(rel_input).with_name(new_name)).replace("\\", "/")
+        new_path = source_root / new_rel
+
+        try:
+            if old_path.exists() and old_path.resolve() != new_path.resolve():
+                new_path.parent.mkdir(parents=True, exist_ok=True)
+                if new_path.exists():
+                    new_path.unlink()
+                old_path.rename(new_path)
+            replacements[rel_input] = new_rel
+        except Exception:
+            continue
+
+    for old_rel, new_rel in replacements.items():
+        text = text.replace(f'"{old_rel}"', f'"{new_rel}"')
+
+    if replacements:
+        try:
+            vtex_out.write_text(text, encoding="utf-8")
+        except Exception:
+            pass
+
+    pngs = pngsForVtex(vtex_out)
+    if not pngs:
+        pngs = legacyPngsForRenamedVtex(vtex_out)
+    return pngs
+
+
 def copyTextureSourceFiles(src_vtex_out: Path, pngs: List[str], dest_vtex_out: Path) -> List[str]:
     dest_vtex_out.parent.mkdir(parents=True, exist_ok=True)
     if src_vtex_out.resolve() != dest_vtex_out.resolve():
@@ -251,7 +321,8 @@ def copyTextureSourceFiles(src_vtex_out: Path, pngs: List[str], dest_vtex_out: P
             dest_vtex_out.parent,
         )
         copied_pngs.append(str(dst))
-    return copied_pngs
+
+    return retargetVtexInputs(dest_vtex_out, src_vtex_out.stem, dest_vtex_out.stem)
 
 
 def materializeGeneratedTexture(vtex_path: str) -> Optional[Tuple[bool, str, Optional[str], List[str]]]:
@@ -333,10 +404,6 @@ def cachedExtraction(vtex_path: str) -> Optional[Tuple[bool, str, Optional[str],
         if pngs:
             return True, "", str(vtex_out), pngs
 
-    rebuilt = materializeGeneratedTexture(vtex_path)
-    if rebuilt is not None:
-        return rebuilt
-
     source_vtex_path = underlyingTexturePath(vtex_path)
     if not source_vtex_path:
         return None
@@ -399,7 +466,8 @@ def extractTexture(vtex_path: str, force: bool = False) -> Tuple[bool, str, Opti
 
 
 def renameExtractedTextureAssets(old_vtex_path: str, new_vtex_path: str, pngs: List[str]) -> List[str]:
-    return [str(Path(png_path)) for png_path in sorted(pngs) if Path(png_path).exists()]
+    _ = pngs
+    return retargetVtexInputs(Path(new_vtex_path), Path(old_vtex_path).stem, Path(new_vtex_path).stem)
 
 
 def extractTexturesBatch(vtex_paths: List[str]) -> Dict[str, Tuple[bool, str, Optional[str], List[str]]]:

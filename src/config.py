@@ -40,12 +40,12 @@ S2V_CLI_URL_LINUX = "https://github.com/ValveResourceFormat/ValveResourceFormat/
 S2V_CLI_DIR = BIN_DIR / "s2v_cli"
 S2V_CLI_DIR.mkdir(parents=True, exist_ok=True)
 
-TEXTURE_CACHE_DIR = SCRIPT_DIR / "texture_cache"
-TEXTURE_CACHE_DIR.mkdir(exist_ok=True)
+TEXTURE_CACHE_DIR = BIN_DIR / "texture_cache"
+TEXTURE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
-TEXTURE_MANIFEST_FILE = SCRIPT_DIR / "texture_manifest.json"
+TEXTURE_MANIFEST_FILE = BIN_DIR / "texture_manifest.json"
 
-RECENT_COLORS_FILE = SCRIPT_DIR / "recent_colors.json"
+RECENT_COLORS_FILE = BIN_DIR / "recent_colors.json"
 MAX_RECENT_COLORS = 24
 
 SYMBOLS = {

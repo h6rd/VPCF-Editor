@@ -23,13 +23,12 @@ from src.color_picker import askCustomColor
 from src.texture_parser import findTextures, applyTextureChanges, generateUniqueName
 from src.texture_manager import (
     extractTexture, extractTexturesBatch, compileTextureBatch,
-    downloadCli, renameExtractedTextureAssets,
-    persistRawTextureFiles, sourceTexturePath, ensureTextureSourceExists,
+    downloadCli, persistRawTextureFiles, sourceTexturePath, ensureTextureSourceExists,
 )
 from src.image_editor import (
     adjustImage, autoRecolorImage, tintImage, isMostlyGrayscale, previewTextureImage,
 )
-from src.texture_manifest import getTextureManifestEntry, setTextureManifestEntry
+from src.texture_manifest import setTextureManifestEntry
 from PIL import Image, ImageTk
 try:
     import PIL._tkinter_finder
@@ -38,6 +37,71 @@ except ImportError:
 
 
 _scrollable_frame_patched = False
+
+
+def texturesEnabled(state: Dict[str, Any]) -> bool:
+    var = state.get("textures_enabled_var")
+    if var is None:
+        return bool(state.get("textures_enabled", True))
+    return bool(var.get())
+
+
+def refreshCurrentTexturesFromState(state: Dict[str, Any]):
+    current_path = state.get("current_path")
+    current_text = state.get("current_text", "")
+    if not current_path or not texturesEnabled(state):
+        state["current_textures"] = []
+        state.setdefault("modified_textures", {}).clear()
+        state["pending_texture_compiles"] = []
+        return
+
+    state["current_textures"] = findTextures(current_text)
+    assignTextureStateKeys(current_path, state["current_textures"])
+
+    source_vtex_paths = {
+        id(t): sourceTexturePath(t["vtex_path"])
+        for t in state["current_textures"]
+    }
+    if not source_vtex_paths:
+        return
+
+    state["status_var"].set(f"Loading {len(source_vtex_paths)} texture(s)...")
+    state["root"].update_idletasks()
+    modified_map = state.get("modified_textures", {})
+    requested_vtex_paths = list(dict.fromkeys(source_vtex_paths.values()))
+    extracted = extractTexturesBatch(requested_vtex_paths)
+    for t_entry in state["current_textures"]:
+        source_vtex_path = source_vtex_paths[id(t_entry)]
+        t_entry["source_vtex_path"] = source_vtex_path
+        success, msg, vtex_out, pngs = extracted.get(
+            source_vtex_path, (False, "Texture was not extracted.", None, []))
+        if success and pngs:
+            t_entry["vtex_out"] = vtex_out
+            t_entry["pngs"] = sorted(pngs)
+        else:
+            t_entry["error"] = msg
+    for t_entry in state["current_textures"]:
+        mod = modified_map.get(textureEntryKey(t_entry))
+        if not mod:
+            continue
+        t_entry["modified"] = True
+        t_entry["h_shift"] = mod.get("h_shift", 0.0)
+        t_entry["s_scale"] = mod.get("s_scale", 1.0)
+        t_entry["v_scale"] = mod.get("v_scale", 1.0)
+        t_entry["recolor_mode"] = mod.get("recolor_mode", "hsv")
+        t_entry["tint_rgb"] = mod.get("tint_rgb")
+
+
+def onTexturesToggle(state: Dict[str, Any]):
+    if not texturesEnabled(state):
+        state.setdefault("modified_textures", {}).clear()
+        state["pending_texture_compiles"] = []
+    refreshCurrentTexturesFromState(state)
+    if state.get("current_path"):
+        renderEntries(state)
+        state["status_var"].set(
+            f"Opened: {os.path.relpath(state['current_path'], state['root_dir'])} — colors: {len(state['current_entries'])} textures: {len(state['current_textures'])}"
+        )
 
 
 def buildUi(state: Dict[str, Any]):
@@ -77,18 +141,47 @@ def buildUi(state: Dict[str, Any]):
     ctk.CTkLabel(row2, text="BULK ACTIONS", text_color=FG_MUTED, font=(
         FONT_FAMILY, 9, "bold")).pack(side="left", padx=(0, 12))
 
+    state["textures_enabled_var"] = tk.BooleanVar(value=state.get("textures_enabled", True))
+    ctk.CTkSwitch(
+        row2,
+        text="Recolor Textures",
+        variable=state["textures_enabled_var"],
+        onvalue=True,
+        offvalue=False,
+        command=lambda: onTexturesToggle(state),
+        progress_color=ACCENT,
+        button_color=ON_ACCENT,
+        button_hover_color=ON_ACCENT,
+        text_color=FG_MUTED,
+        font=(FONT_FAMILY, 9, "bold"),
+    ).pack(side="right")
+
     ctk.CTkButton(
-        row2, text="🎨  Recolor all → 1 color", height=30,
+        row2, text="🎨  1 Color", width=96, height=30,
         fg_color=ACCENT, hover_color=ACCENT_HOVER, text_color=ON_ACCENT, font=(
             FONT_FAMILY, 10, "bold"),
         corner_radius=6, command=lambda: recolorAllFilesSingleColor(state)
     ).pack(side="left", padx=(0, 8))
 
     ctk.CTkButton(
-        row2, text="🎲  Recolor all → 2 colors (random)", height=30,
+        row2, text="🎲  2 Colors (random)", width=150, height=30,
         fg_color=ACCENT, hover_color=ACCENT_HOVER, text_color=ON_ACCENT, font=(
             FONT_FAMILY, 10, "bold"),
         corner_radius=6, command=lambda: recolorAllFilesTwoColors(state)
+    ).pack(side="left", padx=(0, 8))
+
+    ctk.CTkButton(
+        row2, text="🎲  3 Colors (random)", width=150, height=30,
+        fg_color=ACCENT, hover_color=ACCENT_HOVER, text_color=ON_ACCENT, font=(
+            FONT_FAMILY, 10, "bold"),
+        corner_radius=6, command=lambda: recolorAllFilesThreeColors(state)
+    ).pack(side="left", padx=(0, 8))
+
+    ctk.CTkButton(
+        row2, text="🌈  Gradient", width=108, height=30,
+        fg_color="#27272a", hover_color="#3f3f46", text_color=FG,
+        font=(FONT_FAMILY, 10, "bold"),
+        corner_radius=6, command=lambda: recolorAllFilesGradient(state)
     ).pack(side="left")
 
     # main
@@ -156,7 +249,10 @@ def buildUi(state: Dict[str, Any]):
     state["progress_bar"].set(0)
 
 
-def collectAllTexturePaths(scan_results: List[Tuple[str, str, int]]) -> List[str]:
+def collectAllTexturePaths(scan_results: List[Tuple[str, str, int]], textures_enabled: bool = True) -> List[str]:
+    if not textures_enabled:
+        return []
+
     texture_paths: set[str] = set()
     for _rel_path, abs_path, _count in scan_results:
         try:
@@ -164,7 +260,7 @@ def collectAllTexturePaths(scan_results: List[Tuple[str, str, int]]) -> List[str
         except Exception:
             continue
         for entry in findTextures(text):
-            texture_paths.add(entry["vtex_path"])
+            texture_paths.add(sourceTexturePath(entry["vtex_path"]))
     return sorted(texture_paths)
 
 
@@ -228,7 +324,7 @@ def preloadAllTextures(state: Dict[str, Any]):
     state["status_var"].set(f"Indexing textures in {total_files} file(s)...")
     state["root"].update()
 
-    texture_paths = collectAllTexturePaths(scan_results)
+    texture_paths = collectAllTexturePaths(scan_results, texturesEnabled(state))
     if not texture_paths:
         state["progress_bar"].pack_forget()
         state["status_var"].set(f"Found {total_files} file(s) with colors")
@@ -240,16 +336,6 @@ def preloadAllTextures(state: Dict[str, Any]):
 
     extracted = extractTexturesBatch(texture_paths)
     preloaded = sum(1 for success, _msg, _vtex_out, pngs in extracted.values() if success and pngs)
-
-    generated_sources = sorted({
-        vtex_out for success, _msg, vtex_out, pngs in extracted.values()
-        if success and pngs and vtex_out and str(vtex_out).startswith(str(RAW_DIR))
-    })
-    if generated_sources:
-        state["status_var"].set(f"Recompiling {len(generated_sources)} generated texture(s)...")
-        state["progress_bar"].set(0.8)
-        state["root"].update()
-        compileTextureBatch(generated_sources, OUTPUT_DIR)
 
     state["progress_bar"].set(1.0)
     state["root"].update()
@@ -495,14 +581,28 @@ def applyCurrentEditsToDisk(state: Dict[str, Any]) -> Tuple[bool, List[str]]:
             base_dir = source_vtex.rsplit("/", 1)[0]
             final_vtex_str = f"{base_dir}/{Path(raw_vtex_path).name}"
             new_texture_paths[id(entry)] = final_vtex_str
-            if final_vtex_str != original_vtex_path:
-                modified_map.pop(original_vtex_path, None)
-            modified_map[final_vtex_str] = textureEditInfo(entry)
+            modified_map[textureEntryKey(entry)] = textureEditInfo(entry)
             pending_texture_paths.append(raw_vtex_path)
 
         except Exception as exc:
             texture_errors.append(f"{original_vtex_path.split('/')[-1]}: {exc}")
             continue
+
+    if new_texture_paths:
+        original_textures = state.get("current_textures", [])
+        updated_textures = findTextures(new_text)
+        if len(updated_textures) != len(original_textures):
+            texture_errors.append(
+                "Texture entries changed unexpectedly after color rewrite; texture path updates were skipped for this save."
+            )
+        else:
+            remapped_texture_paths: Dict[int, str] = {}
+            for original_entry, updated_entry in zip(original_textures, updated_textures):
+                new_path = new_texture_paths.get(id(original_entry))
+                if new_path:
+                    remapped_texture_paths[id(updated_entry)] = new_path
+            if remapped_texture_paths:
+                new_text = applyTextureChanges(new_text, updated_textures, remapped_texture_paths)
 
     if texture_errors:
         messagebox.showwarning(
@@ -511,9 +611,8 @@ def applyCurrentEditsToDisk(state: Dict[str, Any]) -> Tuple[bool, List[str]]:
             "into a problem and were skipped:\n\n" + "\n".join(texture_errors)
         )
 
-    new_text = applyTextureChanges(new_text, state.get("current_textures", []), new_texture_paths)
-
     if new_text != state["current_text"]:
+        previous_textures = state.get("current_textures", [])
         try:
             writeTextFile(state["current_path"],
                           new_text, state["current_encoding"])
@@ -522,7 +621,12 @@ def applyCurrentEditsToDisk(state: Dict[str, Any]) -> Tuple[bool, List[str]]:
             return False, []
         state["current_text"] = new_text
         state["current_entries"] = findColors(new_text)
-        state["current_textures"] = findTextures(new_text)
+        if texturesEnabled(state):
+            state["current_textures"] = findTextures(new_text)
+            if state.get("current_path"):
+                assignTextureStateKeys(state["current_path"], state["current_textures"], previous_textures)
+        else:
+            state["current_textures"] = []
 
     pending_texture_paths = list(dict.fromkeys(pending_texture_paths))
     if pending_texture_paths:
@@ -539,9 +643,7 @@ def discardCurrentTextureEdits(state: Dict[str, Any]):
     if not isinstance(modified_map, dict):
         return
     for entry in state.get("current_textures", []):
-        vtex_path = entry.get("vtex_path")
-        if isinstance(vtex_path, str):
-            modified_map.pop(vtex_path, None)
+        modified_map.pop(textureEntryKey(entry), None)
 
 
 def discardPendingChanges(state: Dict[str, Any]):
@@ -579,47 +681,8 @@ def loadFile(state: Dict[str, Any], path: str):
     state["current_text"] = text
     state["current_encoding"] = enc
     state["current_entries"] = findColors(text)
-    state["current_textures"] = findTextures(text)
-    
-    source_vtex_paths = {
-        t["vtex_path"]: sourceTexturePath(t["vtex_path"])
-        for t in state["current_textures"]
-    }
-    if source_vtex_paths:
-        state["status_var"].set(f"Loading {len(source_vtex_paths)} texture(s)...")
-        state["root"].update_idletasks()
-        extracted = extractTexturesBatch(list(dict.fromkeys(source_vtex_paths.values())))
-        for t_entry in state["current_textures"]:
-            source_vtex_path = source_vtex_paths[t_entry["vtex_path"]]
-            t_entry["source_vtex_path"] = source_vtex_path
-            success, msg, vtex_out, pngs = extracted.get(
-                source_vtex_path, (False, "Texture was not extracted.", None, []))
-            if success and pngs:
-                t_entry["vtex_out"] = vtex_out
-                t_entry["pngs"] = sorted(pngs)
-            else:
-                t_entry["error"] = msg
-        for t_entry in state["current_textures"]:
-            mod = state.get("modified_textures", {}).get(t_entry["vtex_path"])
-            if not mod:
-                manifest_entry = getTextureManifestEntry(t_entry["vtex_path"])
-                if manifest_entry and manifest_entry.get("mode") != "auto":
-                    mod = {
-                        "h_shift": manifest_entry.get("h_shift", 0.0),
-                        "s_scale": manifest_entry.get("s_scale", 1.0),
-                        "v_scale": manifest_entry.get("v_scale", 1.0),
-                        "recolor_mode": manifest_entry.get("mode", "hsv"),
-                        "tint_rgb": tuple(manifest_entry["tint_rgb"]) if manifest_entry.get("tint_rgb") else None,
-                    }
-            if not mod:
-                continue
-            t_entry["modified"] = True
-            t_entry["h_shift"] = mod.get("h_shift", 0.0)
-            t_entry["s_scale"] = mod.get("s_scale", 1.0)
-            t_entry["v_scale"] = mod.get("v_scale", 1.0)
-            t_entry["recolor_mode"] = mod.get("recolor_mode", "hsv")
-            t_entry["tint_rgb"] = mod.get("tint_rgb")
-            
+    refreshCurrentTexturesFromState(state)
+
     state["dirty"] = False
     state["file_title_var"].set(os.path.relpath(path, state["root_dir"]))
     renderEntries(state)
@@ -657,7 +720,10 @@ def renderEntries(state: Dict[str, Any]):
     state.setdefault("texture_images", {}).clear()
 
     if not state["current_entries"] and not state.get("current_textures"):
-        ctk.CTkLabel(state["scrollable_frame"], text="No colors found in this file.",
+        empty_msg = "No colors found in this file."
+        if not texturesEnabled(state):
+            empty_msg = "No colors found in this file. Texture recoloring is disabled."
+        ctk.CTkLabel(state["scrollable_frame"], text=empty_msg,
                      text_color=FG_MUTED).pack(anchor="w", padx=12, pady=12)
         return
 
@@ -835,6 +901,21 @@ def previewTkImage(base_img: Image.Image, entry: Dict[str, Any]) -> ImageTk.Phot
     return ImageTk.PhotoImage(preview)
 
 
+def textureEntryKey(entry: Dict[str, Any]) -> str:
+    return str(entry.get("state_key") or entry.get("vtex_path") or id(entry))
+
+
+def assignTextureStateKeys(file_path: str, textures: List[Dict[str, Any]], previous_textures: Optional[List[Dict[str, Any]]] = None):
+    if previous_textures and len(previous_textures) == len(textures):
+        for idx, entry in enumerate(textures):
+            prev_key = previous_textures[idx].get("state_key")
+            entry["state_key"] = str(prev_key) if prev_key else f"{file_path}::{idx}"
+        return
+
+    for idx, entry in enumerate(textures):
+        entry["state_key"] = f"{file_path}::{idx}"
+
+
 def textureEditInfo(entry: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "h_shift": entry.get("h_shift", 0.0),
@@ -935,7 +1016,7 @@ def buildTextureInline(state: Dict[str, Any], parent_card: ctk.CTkFrame,
         return sl
 
     def persistAndPreview(e=t_entry, lbl_var=name_var):
-        state.setdefault("modified_textures", {})[e["vtex_path"]] = textureEditInfo(e)
+        state.setdefault("modified_textures", {})[textureEntryKey(e)] = textureEditInfo(e)
         lbl_var.set(getLabel(e))
         markDirty(state)
         if preview_base is not None and isinstance(thumb_btn, tk.Button):
@@ -1218,6 +1299,9 @@ def bulkRecolor(state: Dict[str, Any], color_picker_fn) -> Tuple[int, int, List[
     if total_files == 0:
         return 0, 0, [], 0
 
+    state["modified_textures"] = {}
+    state["pending_texture_compiles"] = []
+
     state["progress_bar"].set(0)
     state["progress_bar"].pack(side="right", padx=(0, 16))
 
@@ -1238,7 +1322,7 @@ def bulkRecolor(state: Dict[str, Any], color_picker_fn) -> Tuple[int, int, List[
             continue
 
         entries = findColors(text)
-        textures = findTextures(text)
+        textures = findTextures(text) if texturesEnabled(state) else []
         if not entries and not textures:
             continue
 
@@ -1276,23 +1360,16 @@ def bulkRecolor(state: Dict[str, Any], color_picker_fn) -> Tuple[int, int, List[
         for entry in textures:
             vtex_path = entry["vtex_path"]
             source_vtex_path = sourceTexturePath(vtex_path)
-            mod_info = state.get("modified_textures", {}).get(vtex_path)
+            mod_info = None
 
             if not target_rgb_cache:
                 target_rgb_cache = color_picker_fn()
 
-            if mod_info:
-                h_shift = mod_info["h_shift"]
-                s_scale = mod_info["s_scale"]
-                v_scale = mod_info["v_scale"]
-                recolor_mode = mod_info.get("recolor_mode", "hsv")
-                tint_rgb = mod_info.get("tint_rgb")
-            else:
-                h_shift = target_rgb_cache[0] * 0.01
-                s_scale = target_rgb_cache[1] * 0.01
-                v_scale = target_rgb_cache[2] * 0.01
-                recolor_mode = "hsv"
-                tint_rgb = None
+            h_shift = target_rgb_cache[0] * 0.01
+            s_scale = target_rgb_cache[1] * 0.01
+            v_scale = target_rgb_cache[2] * 0.01
+            recolor_mode = "hsv"
+            tint_rgb = None
             new_vtex_name = generateUniqueName(
                 source_vtex_path, h_shift, s_scale, v_scale, recolor_mode, tint_rgb)
 
@@ -1386,31 +1463,22 @@ def bulkRecolor(state: Dict[str, Any], color_picker_fn) -> Tuple[int, int, List[
                     available_pristine[source_vtex_path] = (True, "", vtex_out, pngs)
                 continue
 
+            raw_vtex_path, raw_pngs = persistRawTextureFiles(
+                new_vtex_name, str(vtex_out), pngs
+            )
+
             if spec["mod_info"]:
                 mode = spec.get("recolor_mode", "hsv")
                 tint_rgb = spec.get("tint_rgb")
                 if mode in ("overlay", "replace") and tint_rgb:
-                    for png in pngs:
+                    for png in raw_pngs:
                         tintImage(png, png, tuple(tint_rgb), mode)
                 else:
-                    for png in pngs:
+                    for png in raw_pngs:
                         adjustImage(png, png, spec["h_shift"], spec["s_scale"], spec["v_scale"])
             else:
-                for png in pngs:
+                for png in raw_pngs:
                     autoRecolorImage(png, png, spec["target_rgb"])
-
-            old_vtex_path = Path(vtex_out)
-            new_vtex_path = old_vtex_path.with_name(new_vtex_name.split("/")[-1])
-            renamed_pngs = pngs
-            if old_vtex_path.exists() and old_vtex_path != new_vtex_path:
-                old_vtex_path.rename(new_vtex_path)
-                renamed_pngs = renameExtractedTextureAssets(
-                    str(old_vtex_path), str(new_vtex_path), pngs
-                )
-
-            raw_vtex_path, raw_pngs = persistRawTextureFiles(
-                new_vtex_name, str(new_vtex_path), renamed_pngs
-            )
             if spec["mod_info"]:
                 recordTextureManifest(
                     new_vtex_name,
@@ -1530,6 +1598,25 @@ def afterBulkRecolor(state: Dict[str, Any]):
         clearRightPanel(state)
 
 
+def bulkTextureConfirmText(state: Dict[str, Any]) -> str:
+    if not texturesEnabled(state):
+        return (
+            "Texture recoloring is currently disabled, so textures will be ignored.\n"
+            "Only color values inside .vpcf files will be changed.\n"
+        )
+    return (
+        "White/gray/black textures will also be ignored by bulk recolor and can only be colored manually.\n"
+        "Colored textures get a hue shift.\n"
+    )
+
+
+def appendBulkResultTextureInfo(state: Dict[str, Any], msg: str, skipped_gray: int) -> str:
+    if texturesEnabled(state) and skipped_gray:
+        msg += f"\n\nSkipped {skipped_gray} white/gray/black texture(s)."
+    return msg
+
+
+
 def recolorAllFilesSingleColor(state: Dict[str, Any]):
     if not state["last_scan_results"]:
         messagebox.showinfo(
@@ -1548,8 +1635,7 @@ def recolorAllFilesSingleColor(state: Dict[str, Any]):
         f"This will recolor ALL colors in {file_count} file(s) towards a single hue "
         f"(RGB {r}, {g}, {b}).\n\n"
         "Black, white, and gray color values will be ignored.\n"
-        "White/gray/black textures will also be ignored by bulk recolor and can only be colored manually.\n"
-        "Colored textures get a hue shift.\n"
+        f"{bulkTextureConfirmText(state)}"
         "Each color's original saturation/brightness will be preserved (only the hue changes).\n"
         "Alpha values will be preserved. Folders structure will mirror into 'compiled'.\n\n"
         "Continue?"
@@ -1563,8 +1649,7 @@ def recolorAllFilesSingleColor(state: Dict[str, Any]):
     vpk_path = buildVpkFromCompiled()
 
     msg = f"Recolored {changed} file(s). Compiled {compiled} file(s)."
-    if skipped_gray:
-        msg += f"\n\nSkipped {skipped_gray} white/gray/black texture(s)."
+    msg = appendBulkResultTextureInfo(state, msg, skipped_gray)
     if vpk_path:
         msg += f"\n\nVPK created: {vpk_path}"
     if compile_errors:
@@ -1595,8 +1680,7 @@ def recolorAllFilesTwoColors(state: Dict[str, Any]):
         "Confirm Bulk Recolor",
         f"This will randomly recolor colors in {file_count} file(s) towards EITHER hue:\n  • RGB {color_a}\n  • RGB {color_b}\n\n"
         "Black, white, and gray color values will be ignored.\n"
-        "White/gray/black textures will also be ignored by bulk recolor and can only be colored manually.\n"
-        "Colored textures get a hue shift.\n"
+        f"{bulkTextureConfirmText(state)}"
         "Each color's original saturation/brightness will be preserved (only the hue changes).\n"
         "Alpha values will be preserved. Folders structure will mirror into 'compiled'.\n\n"
         "Continue?"
@@ -1610,8 +1694,7 @@ def recolorAllFilesTwoColors(state: Dict[str, Any]):
     vpk_path = buildVpkFromCompiled()
 
     msg = f"Recolored {changed} file(s). Compiled {compiled} file(s)."
-    if skipped_gray:
-        msg += f"\n\nSkipped {skipped_gray} white/gray/black texture(s)."
+    msg = appendBulkResultTextureInfo(state, msg, skipped_gray)
     if vpk_path:
         msg += f"\n\nVPK created: {vpk_path}"
     if compile_errors:
@@ -1620,6 +1703,62 @@ def recolorAllFilesTwoColors(state: Dict[str, Any]):
             f"{OUTPUT_DIR / 'compile_errors.log'}"
         )
     messagebox.showinfo("Done", msg)
+
+
+def recolorAllFilesThreeColors(state: Dict[str, Any]):
+    if not state["last_scan_results"]:
+        messagebox.showinfo(
+            "No Files", "No .vpcf files with colors were found. Rescan the folder first.")
+        return
+
+    color_a = askCustomColor(
+        state["root"], initialHex="#39ff88", title="Choose the first color")
+    if not color_a:
+        return
+    color_b = askCustomColor(
+        state["root"], initialHex="#39c5ff", title="Choose the second color")
+    if not color_b:
+        return
+    color_c = askCustomColor(
+        state["root"], initialHex="#c539ff", title="Choose the third color")
+    if not color_c:
+        return
+
+    file_count = len(state["last_scan_results"])
+    if not messagebox.askyesno(
+        "Confirm Bulk Recolor",
+        f"This will randomly recolor colors in {file_count} file(s) towards one of these hues:\n  • RGB {color_a}\n  • RGB {color_b}\n  • RGB {color_c}\n\n"
+        "Black, white, and gray color values will be ignored.\n"
+        f"{bulkTextureConfirmText(state)}"
+        "Each color's original saturation/brightness will be preserved (only the hue changes).\n"
+        "Alpha values will be preserved. Folders structure will mirror into 'compiled'.\n\n"
+        "Continue?"
+    ):
+        return
+
+    changed, compiled, compile_errors, skipped_gray = bulkRecolor(
+        state, lambda a=color_a, b=color_b, c=color_c: random.choice([a, b, c]))
+    afterBulkRecolor(state)
+
+    vpk_path = buildVpkFromCompiled()
+
+    msg = f"Recolored {changed} file(s). Compiled {compiled} file(s)."
+    msg = appendBulkResultTextureInfo(state, msg, skipped_gray)
+    if vpk_path:
+        msg += f"\n\nVPK created: {vpk_path}"
+    if compile_errors:
+        msg += (
+            f"\n\n{len(compile_errors)} file(s) failed to compile — details saved to:\n"
+            f"{OUTPUT_DIR / 'compile_errors.log'}"
+        )
+    messagebox.showinfo("Done", msg)
+
+
+def recolorAllFilesGradient(state: Dict[str, Any]):
+    messagebox.showinfo(
+        "Not implemented yet",
+        "The gradient bulk recolor button has been added, but its functionality is not implemented yet."
+    )
 
 
 def onClose(state: Dict[str, Any]):
@@ -1671,6 +1810,7 @@ def createVpcfColorEditorApp(root: ctk.CTk, start_dir: str) -> Dict[str, Any]:
         "file_buttons": {},
         "tree_item_paths": {},
         "tree_item_for_path": {},
+        "textures_enabled": True,
         "compiler_ready": initializeCompiler()
     }
     downloadCli()
