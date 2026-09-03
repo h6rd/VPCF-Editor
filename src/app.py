@@ -157,32 +157,25 @@ def buildUi(state: Dict[str, Any]):
     ).pack(side="right")
 
     ctk.CTkButton(
-        row2, text="🎨  1 Color", width=96, height=30,
+        row2, text="🎨 1 Color", width=90, height=30,
         fg_color=ACCENT, hover_color=ACCENT_HOVER, text_color=ON_ACCENT, font=(
             FONT_FAMILY, 10, "bold"),
         corner_radius=6, command=lambda: recolorAllFilesSingleColor(state)
     ).pack(side="left", padx=(0, 8))
 
     ctk.CTkButton(
-        row2, text="🎲  2 Colors (random)", width=150, height=30,
+        row2, text="🎲 2 Colors (random)", width=120, height=30,
         fg_color=ACCENT, hover_color=ACCENT_HOVER, text_color=ON_ACCENT, font=(
             FONT_FAMILY, 10, "bold"),
         corner_radius=6, command=lambda: recolorAllFilesTwoColors(state)
     ).pack(side="left", padx=(0, 8))
 
     ctk.CTkButton(
-        row2, text="🎲  3 Colors (random)", width=150, height=30,
+        row2, text="🎲 3 Colors (random)", width=120, height=30,
         fg_color=ACCENT, hover_color=ACCENT_HOVER, text_color=ON_ACCENT, font=(
             FONT_FAMILY, 10, "bold"),
         corner_radius=6, command=lambda: recolorAllFilesThreeColors(state)
     ).pack(side="left", padx=(0, 8))
-
-    ctk.CTkButton(
-        row2, text="🌈  Gradient", width=108, height=30,
-        fg_color="#27272a", hover_color="#3f3f46", text_color=FG,
-        font=(FONT_FAMILY, 10, "bold"),
-        corner_radius=6, command=lambda: recolorAllFilesGradient(state)
-    ).pack(side="left")
 
     # main
     main_container = ctk.CTkFrame(root, fg_color="transparent")
@@ -1752,13 +1745,6 @@ def recolorAllFilesThreeColors(state: Dict[str, Any]):
             f"{OUTPUT_DIR / 'compile_errors.log'}"
         )
     messagebox.showinfo("Done", msg)
-
-
-def recolorAllFilesGradient(state: Dict[str, Any]):
-    messagebox.showinfo(
-        "Not implemented yet",
-        "The gradient bulk recolor button has been added, but its functionality is not implemented yet."
-    )
 
 
 def onClose(state: Dict[str, Any]):

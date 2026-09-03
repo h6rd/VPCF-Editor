@@ -3,7 +3,7 @@ import hashlib
 from typing import List, Dict, Any, Optional, Tuple
 
 TEXTURE_PATTERN = re.compile(r'resource:"([^"]+\.vtex)"')
-IGNORED_TEXTURE_NAME_PARTS = ("lens_flare", "ripple")
+IGNORED_TEXTURE_NAME_PARTS = ("lens_flare", "ripple", "warp_noise")
 
 
 def shouldIgnoreTexture(vtex_path: str) -> bool:

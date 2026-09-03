@@ -1,3 +1,4 @@
+import difflib
 import os
 import re
 import shutil
@@ -417,6 +418,58 @@ def cachedExtraction(vtex_path: str) -> Optional[Tuple[bool, str, Optional[str],
     return True, "", str(source_vtex_out), pngs
 
 
+def candidateTextureParents(vtex_out: Path) -> List[Path]:
+    parent = vtex_out.parent
+    candidates = [parent]
+    parent_str = str(parent).replace("\\", "/")
+
+    swaps = []
+    if "/materials/particle/" in parent_str:
+        swaps.append(parent_str.replace("/materials/particle/", "/materials/particles/", 1))
+    if "/materials/particles/" in parent_str:
+        swaps.append(parent_str.replace("/materials/particles/", "/materials/particle/", 1))
+
+    for swapped in swaps:
+        swapped_path = Path(swapped)
+        if swapped_path not in candidates:
+            candidates.append(swapped_path)
+
+    return candidates
+
+
+def textureNameSimilarity(a: str, b: str) -> float:
+    return difflib.SequenceMatcher(None, a.lower(), b.lower()).ratio()
+
+
+def resolveExtractedTextureOutput(vtex_out: Path) -> Tuple[Optional[Path], List[str]]:
+    pngs = pngsForVtex(vtex_out)
+    if vtex_out.exists() and pngs:
+        return vtex_out, pngs
+
+    requested_stem = vtex_out.stem
+    best_match: Optional[Path] = None
+    best_score = 0.0
+
+    for parent in candidateTextureParents(vtex_out):
+        if not parent.exists():
+            continue
+        for candidate in parent.glob("*.vtex"):
+            candidate_pngs = pngsForVtex(candidate)
+            if not candidate_pngs:
+                continue
+            score = textureNameSimilarity(requested_stem, candidate.stem)
+            if candidate.stem.startswith(requested_stem) or requested_stem.startswith(candidate.stem):
+                score = max(score, 0.93)
+            if score > best_score:
+                best_match = candidate
+                best_score = score
+
+    if best_match is not None and best_score >= 0.82:
+        return best_match, pngsForVtex(best_match)
+
+    return None, []
+
+
 def extractTexture(vtex_path: str, force: bool = False) -> Tuple[bool, str, Optional[str], List[str]]:
     if not force:
         cached = cachedExtraction(vtex_path)
@@ -454,15 +507,13 @@ def extractTexture(vtex_path: str, force: bool = False) -> Tuple[bool, str, Opti
         return False, f"Failed to extract texture:\n{exc}", None, []
 
     vtex_out = out_dir / source_vtex_path
-    if not vtex_out.parent.exists():
-        return False, f"Extracted directory not found: {vtex_out.parent}", None, []
-
-    pngs = pngsForVtex(vtex_out)
-
-    if not vtex_out.exists() or not pngs:
+    resolved_vtex_out, pngs = resolveExtractedTextureOutput(vtex_out)
+    if resolved_vtex_out is None:
+        if not any(parent.exists() for parent in candidateTextureParents(vtex_out)):
+            return False, f"Extracted directory not found: {vtex_out.parent}", None, []
         return False, f"Expected output not found in {vtex_out.parent}", None, []
 
-    return True, "", str(vtex_out), pngs
+    return True, "", str(resolved_vtex_out), pngs
 
 
 def renameExtractedTextureAssets(old_vtex_path: str, new_vtex_path: str, pngs: List[str]) -> List[str]:
