@@ -16,17 +16,10 @@ A tool for recoloring particle effects, compiling them, and packaging the result
 ## Features
 
 - Manual color editing for individual effect files
-- Batch recolor to a single color while preserving original saturation and brightness
-- Batch recolor to two random colors while preserving original saturation and brightness
+- Batch recoloring in 1, 2, 3 colors while preserving original saturation and brightness
+- Texture recolor
 - Automatic compilation of source assets
 - Packaging of compiled files into a ready-to-use vpk
-
----
-
-## Current Limitations
-
-vtex (png) editing is not supported at this time.  
-As a result, some effects may still show original details if they rely on vtex sprites.
 
 ---
 
@@ -42,8 +35,7 @@ As a result, some effects may still show original details if they rely on vtex s
 
 Compiled `_c` files and the final VPK will appear in the compiled folder.
 
-https://github.com/user-attachments/assets/cfecb8f2-1f02-4a41-98e7-f323fd8e4f8d
-
+https://github.com/user-attachments/assets/0979bd3d-1fc0-4c9d-88ec-cafe7230b744
 
 ## Linux Usage
 
